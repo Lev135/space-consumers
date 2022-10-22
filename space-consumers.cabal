@@ -25,9 +25,9 @@ library
 
   exposed-modules:    Text.Megaparsec.Char.Lexer.New
 
-executable exec
+executable examples
   import:             basics
-  hs-source-dirs:     app
+  hs-source-dirs:     examples
 
   main-is:            Main.hs
   other-modules:
