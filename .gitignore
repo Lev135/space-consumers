@@ -1,0 +1,4 @@
+dist-newstyle
+.vscode
+cabal.project.local
+drafts

@@ -1,0 +1,46 @@
+cabal-version:      3.0
+name:               space-consumers
+version:            0.1.0.0
+synopsis:
+homepage:
+license:            NONE
+author:             Lev Dvorkin
+maintainer:         lev_135@mail.ru
+copyright:
+category:
+extra-source-files: CHANGELOG.md
+
+common basics
+  default-language:   Haskell2010
+  build-depends:      base
+                    , megaparsec
+                    , text
+                    , containers
+                    , case-insensitive
+  ghc-options:        -Wall
+
+library
+  import:             basics
+  hs-source-dirs:     src
+
+  exposed-modules:    Text.Megaparsec.Char.Lexer.New
+
+executable exec
+  import:             basics
+  hs-source-dirs:     app
+
+  main-is:            Main.hs
+  other-modules:
+
+  build-depends:      space-consumers
+
+benchmark bench
+  import:             basics
+  type:               exitcode-stdio-1.0
+  hs-source-dirs:     bench
+  ghc-options:        -O2
+
+  main-is:            Bench.hs
+
+  build-depends:      criterion
+                    , space-consumers
