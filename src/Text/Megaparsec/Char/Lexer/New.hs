@@ -11,21 +11,20 @@
 -- Stability   :  experimental
 -- Portability :  non-portable
 --
--- This module provides alternative to 'Text.Megaparsec.Char.Lexer' approach
+-- This module provides alternative to /Text.Megaparsec.Char.Lexer/ approach
 -- for lexing process, especially for indentation-sensitive parsing.
 -- It's highly not recommended to mix functions from these two modules.
 --
 -- Parsing of white space is an important part of any parser. We propose
 -- a special policy for consuming line spaces (i. e. spaces and tabs) and line
--- endings.
+-- endings:
 --
--- For line spaces we follow `Text.Megaparsec.Char.Lexer`: each lexeme should
--- consume __all line spaces after it__ and this can be done by wrapping it in
--- `lexeme` combinator.
+-- - For line spaces we follow /Text.Megaparsec.Char.Lexer/: each lexeme should
+--   consume __all line spaces after it__ and this can be done by wrapping it in
+--   `lexeme` combinator.
+-- - For end of line symbols we have a different convention: parser should
+--   consume __only eols inside it's block__, but __not those, which follow it__.
 --
--- However, there is another convention for end of line consuming. Parser should
--- consume __only eols inside it's block__, but __not those, which follow it__.
-
 -- Also note that you need to call 'space' manually to consume any white space
 -- before the first lexeme (i.e. at the beginning of the file).
 --
@@ -86,7 +85,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Read (readMaybe)
 
 -- | Newtype wrapper for line space consumer. In common cases you should use
--- standard combinators from `Text.Megaparsec.Char.Lexer.New` rather than
+-- standard combinators from /Text.Megaparsec.Char.Lexer.New/ rather than
 -- unwrapping it manually
 newtype Sc m
   = Sc { unSc :: m () }
