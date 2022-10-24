@@ -24,7 +24,6 @@ to restrict them. However, I don't think current implementation to be the
 only right, so I'd like to consider any other proposals and maybe change the
 lib's behavior.
 
-
 Usage
 ---
 Just import `Text.Megaparsec.Char.Lexer.New` instead of

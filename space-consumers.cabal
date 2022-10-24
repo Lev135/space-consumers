@@ -1,13 +1,13 @@
 cabal-version:      3.0
 name:               space-consumers
 version:            0.1.0.0
-synopsis:
-homepage:
+synopsis:           Improved space consumers for megaparsec
+homepage:           https://github.com/Lev135/space-consumers
 license:            NONE
 author:             Lev Dvorkin
 maintainer:         lev_135@mail.ru
 copyright:
-category:
+category:           parsing
 extra-source-files: CHANGELOG.md
 
 common basics
@@ -32,7 +32,10 @@ executable examples
   main-is:            Main.hs
   other-modules:
 
-  build-depends:      space-consumers
+  if flag(examples)
+    build-depends:    space-consumers
+  else
+    buildable:        False
 
 benchmark bench
   import:             basics
@@ -44,3 +47,8 @@ benchmark bench
 
   build-depends:      criterion
                     , space-consumers
+
+flag examples
+  manual:             True
+  default:            False
+  description:        Build examples executable
