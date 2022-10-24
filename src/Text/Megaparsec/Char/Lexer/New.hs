@@ -192,9 +192,9 @@ optionBody = BodyOpt
 -- | Parse a body by given callback, if the next line after a head has greater
 -- indentation level, otherwise return Nothing
 --
--- prop> optionalBody = optionBody Nothing
-optionalBody :: (Scn m -> m (Maybe a)) -> Body m (Maybe a)
-optionalBody = BodyOpt Nothing
+-- prop> optionalBody = optionBody Nothing (fmap Just . f)
+optionalBody :: Functor m => (Scn m -> m a) -> Body m (Maybe a)
+optionalBody f = BodyOpt Nothing (fmap Just . f)
 
 -- | Parse some (greater, than zero) number of lines by given parser
 --
