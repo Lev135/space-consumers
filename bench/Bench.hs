@@ -4,99 +4,85 @@
 
 module Main where
 
-import Control.Monad (unless)
-import Criterion
-import Criterion.Main
+import Criterion (Benchmark, bench, bgroup, whnf)
+import Criterion.Main (defaultMain)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+import qualified Text.Megaparsec.Char.Lexer.New as LN
+import Text.Megaparsec.Char.Lexer.New (Sc(..))
 
 type Parser = Parsec Void Text
 type ParserM = MonadParsec Void Text
 
-pa :: ParserM m => m Text
-pa = string "a"
-
 ns :: [Int]
-ns = (* 1000000) <$> [1, 2, 4]
+ns = [500, 1000, 2000, 4000]
+
+sc, scn, scn1, scn11 :: Parser ()
+sc = hspace
+-- | Consumes line space and eols, possibly nothing
+scn = hidden space
+-- | Consumes line space and eols, including at least one eol
+scn1 = label "end of line" $ hspace *> eol *> hidden space
+-- | Consumes line space and exactly one eol
+scn11 = label "end of line" $ hspace *> eol *> hidden hspace
 
 main :: IO ()
-main = defaultMain [] {-[
+main = defaultMain [
     bgroup "lineFold" $
       let p  = some $ do
-                res <- L.lineFold hspace space $ \sc ->
-                  some (pa <* sc)
-                res <$ space
+                res <- LN.lineFold (Sc sc) scn $ \sc' ->
+                  some $ LN.symbol sc' "a"
+                scn
+                pure res
           p0 = some $ do
-                res <- L.oldLineFold space $ \sc ->
-                  pa `sepBy1` (try sc <* notFollowedBy eof)
-                space
-      in [
-        bgroup "only line spaces" $
+                res <- L.lineFold space $ \sc' ->
+                  string "a" `sepBy1` (try sc' <* notFollowedBy eof)
+                scn
+                pure res
+      in
+      [ bgroup "only line spaces" $
           let gen n = T.replicate n "a "
-           in [ bgroup "old" $ benchPN gen p0 <$> ns
-              , bgroup "new" $ benchPN gen p <$> ns
-              ],
-        bgroup "multiple lines fold with the same indent" $
+           in compParsers gen p0 p
+      , bgroup "multiple lines fold with the same indent" $
           let gen n = "a\n" <> T.replicate (n - 1) " a\n"
-           in [ bgroup "old" $ benchPN gen p0 <$> ns
-              , bgroup "new" $ benchPN gen p <$> ns
-              ],
-        bgroup "multiple lines without folds" $
+           in compParsers gen p0 p
+      , bgroup "multiple lines without folds" $
           let gen n = "a\n" <> T.replicate (n - 1) "a\n"
-           in [ bgroup "old" $ benchPN gen p0 <$> ns
-              , bgroup "new" $ benchPN gen p <$> ns
-              ],
-        bgroup "known line fold end" $
+           in compParsers gen p0 p
+      , bgroup "known line fold end" $
           let gen n = T.replicate (n `div` 3) "a\n b\n c\n"
               q = some $ do
-                    res <- L.lineFold hspace space $ \sc -> do
-                      a <- L.symbol sc "a"
-                      b <- L.symbol sc "b"
-                      c <- L.symbol sc "c"
+                    res <- LN.lineFold (Sc sc) scn $ \sc' -> do
+                      a <- LN.symbol sc' "a"
+                      b <- LN.symbol sc' "b"
+                      c <- LN.symbol sc' "c"
                       pure [a, b, c]
                     space
                     pure res
               q0 = some $ do
-                    res <- L.oldLineFold space $ \sc -> do
-                      a <- L.symbol sc "a"
-                      b <- L.symbol sc "b"
-                      c <- L.symbol space "c"
+                    res <- L.lineFold scn $ \sc' -> do
+                      a <- L.symbol sc' "a"
+                      b <- L.symbol sc' "b"
+                      c <- L.symbol sc  "c"
                       pure [a, b, c]
+                    scn
                     pure res
-           in [ bgroup "old" $ benchPN gen q0 <$> ns
-              , bgroup "new" $ benchPN gen q <$> ns
-              ]
+           in compParsers gen q0 q
       ]
-
-    -- bgroup "local and imported lineFold" $
-    --   let p  = some $ L.lineFold hspace space $ \sc -> some (pa *> sc)
-    --       p' = some $ lineFold'  hspace space $ \sc -> some (pa *> sc)
-    --   in [
-    --     bgroup "only line spaces" $
-    --       let gen n = T.replicate n "a "
-    --        in [ bgroup "import" $ benchPN gen p <$> [n * 10000 | n <- [1, 2, 4]]
-    --           , bgroup "local" $ benchPN gen p' <$> [n * 10000 | n <- [1, 2, 4]]
-    --           ],
-    --     bgroup "multiple lines fold with the same indent" $
-    --       let gen n = "a\n" <> T.replicate (n - 1) " a\n"
-    --        in [ bgroup "import" $ benchPN gen p <$> [n * 10000 | n <- [1, 2, 4]]
-    --           , bgroup "local" $ benchPN gen p' <$> [n * 10000 | n <- [1, 2, 4]]
-    --           ],
-    --     bgroup "multiple lines without folds" $
-    --       let gen n = "a\n" <> T.replicate (n - 1) " a\n"
-    --        in [ bgroup "import" $ benchPN gen p <$> [n * 10000 | n <- [1, 2, 4]]
-    --           , bgroup "local" $ benchPN gen p' <$> [n * 10000 | n <- [1, 2, 4]]
-    --           ]
-    --     ]
     ]
--}
 
-benchPN :: (Int -> Text) -> Parser b -> Int ->  Benchmark
-benchPN gen p = benchN gen (runParser p "")
+compParsers :: (Int -> Text) -> Parser b -> Parser b -> [Benchmark]
+compParsers gen p0 p =
+    [ bgroup "old" $ bParser gen p0 <$> ns
+    , bgroup "new" $ bParser gen p  <$> ns
+    ]
 
-benchN :: (Int -> a) -> (a -> b) -> Int ->  Benchmark
-benchN gen f n = bench (show n) $ whnf f (gen n)
+bParser :: (Int -> Text) -> Parser b -> Int ->  Benchmark
+bParser gen p = bGen gen (runParser p "")
+
+bGen :: (Int -> a) -> (a -> b) -> Int ->  Benchmark
+bGen gen f n = bench (show n) $ whnf f (gen n)
