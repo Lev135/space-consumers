@@ -119,7 +119,7 @@ ex3 hscn scn = L.headedBlock hscn scn do
   _ <- L.symbol sc "&"
   name2 <- label "second name" $ L.lexeme sc $ takeWhile1P Nothing isAlpha
   _ <- L.symbol sc ":"
-  pure $ L.BlockOne \scn' -> do
+  pure $ L.oneBody \scn' -> do
     _ <- L.symbol sc name1
     val1 <- L.lexeme sc L.decimal
     scn'
