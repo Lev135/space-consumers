@@ -5,7 +5,7 @@
 -- |
 -- Module      :  Text.Megaparsec.Char.Lexer.New
 -- Copyright   :  (c) 2022 Lev Dvorkin
--- License     :  FreeBSD
+-- License     :  BSD3
 --
 -- Maintainer  :  Lev Dvorkin <lev_135@mail.ru>
 -- Stability   :  experimental
@@ -126,11 +126,11 @@ symbol' sc = L.symbol' $ unSc sc
 
 -- | Generalized version of `block`, providing a way to change what is desired
 -- ordering related to a reference indentation level
-blockWith :: (TraversableStream s, MonadParsec e s m) =>
-  Ordering -> -- ^ desired ordering @act \`compare\` ref@
-  Pos -> -- ^ reference indentation level
-  Scn m -> -- ^ space and eols consumer
-  (Scn m -> m a) -- ^ callback that uses provided space consumer
+blockWith :: (TraversableStream s, MonadParsec e s m)
+  => Ordering -- ^ desired ordering @act \`compare\` ref@
+  -> Pos -- ^ reference indentation level
+  -> Scn m -- ^ space and eols consumer
+  -> (Scn m -> m a) -- ^ callback that uses provided space consumer
   -> m a -- ^ result returned by a callback
 blockWith ord ref scn action =
   action $ void $ L.indentGuard scn ord ref
@@ -154,8 +154,8 @@ blockWith ord ref scn action =
 --   string "bar" <* scn
 --   string "baz" -- we do not use eol consumer after the last string!
 -- @
-block :: (TraversableStream s, MonadParsec e s m) =>
-  Scn m -> (Scn m -> m a) -> m a
+block :: (TraversableStream s, MonadParsec e s m)
+  => Scn m -> (Scn m -> m a) -> m a
 block scn action = do
   ref <- L.indentLevel
   blockWith EQ ref scn action
@@ -199,16 +199,16 @@ optionalBody = BodyOpt Nothing
 -- | Parse some (greater, than zero) number of lines by given parser
 --
 -- prop> someBody pEl = oneBody (pEl `sepBy1`)
-someBody :: (TraversableStream s, MonadParsec e s m) =>
-  m el -> Body m [el]
+someBody :: (TraversableStream s, MonadParsec e s m)
+  => m el -> Body m [el]
 someBody pEl = BodyOne (pEl `sepBy1`)
 {-# INLINEABLE someBody #-}
 
 -- | Parse many (maybe zero) lines by given parser
 --
 -- prop> manyBody pEl = optionBody [] (pEl `sepBy`)
-manyBody :: (TraversableStream s, MonadParsec e s m) =>
-  m el -> Body m [el]
+manyBody :: (TraversableStream s, MonadParsec e s m)
+  => m el -> Body m [el]
 manyBody pEl = BodyOpt [] (pEl `sepBy`)
 {-# INLINEABLE manyBody #-}
 
@@ -235,11 +235,11 @@ manyBody pEl = BodyOpt [] (pEl `sepBy`)
 --   string ":"
 --   pure $ someBody (L.symbol hspace name *> L.decimal)
 -- @
-headedBlock :: (TraversableStream s, MonadParsec e s m) =>
-  Scn m -> -- ^ how to consume white space after the head
-  Scn m -> -- ^ how to consume white space after each line of body
-  m (Body m a) -> -- ^ how to parse a head and get body parser
-  m a -- ^ the value, returned by body parser
+headedBlock :: (TraversableStream s, MonadParsec e s m)
+  => Scn m -- ^ how to consume white space after the head
+  -> Scn m -- ^ how to consume white space after each line of body
+  -> m (Body m a) -- ^ how to parse a head and get body parser
+  -> m a -- ^ the value, returned by body parser
 headedBlock hscn scn pContent = do
   ref <- L.indentLevel
   content <- pContent
@@ -255,43 +255,43 @@ headedBlock hscn scn pContent = do
         else pure a
 {-# INLINEABLE headedBlock #-}
 
-headedOne :: (TraversableStream s, MonadParsec e s m) =>
-  Scn m -> -- ^ how to consume white space after the head
-  Scn m -> -- ^ how to consume white space after each line of body
-  m (el -> a) -> -- ^ how to parse a head
-  (Scn m -> m el) -> -- ^ callback to parse a body
-  m a -- callback's result transformed by the result of head parser
+headedOne :: (TraversableStream s, MonadParsec e s m)
+  => Scn m -- ^ how to consume white space after the head
+  -> Scn m -- ^ how to consume white space after each line of body
+  -> m (el -> a) -- ^ how to parse a head
+  -> (Scn m -> m el) -- ^ callback to parse a body
+  -> m a -- callback's result transformed by the result of head parser
 headedOne hscn scn pHead pEl = headedBlock hscn scn $
   BodyOne . (\f -> fmap f . pEl) <$> pHead
 {-# INLINEABLE headedOne #-}
 
-headedOptional :: (TraversableStream s, MonadParsec e s m) =>
-  Scn m -> -- ^ how to consume white space after the head
-  Scn m -> -- ^ how to consume white space after each line of body
-  m (Maybe el -> a) -> -- ^ how to parse a head
-  (Scn m -> m el) -> -- ^ callback to parse a body
-  m a -- callback's result transformed by the result of head parser
+headedOptional :: (TraversableStream s, MonadParsec e s m)
+  => Scn m -- ^ how to consume white space after the head
+  -> Scn m -- ^ how to consume white space after each line of body
+  -> m (Maybe el -> a) -- ^ how to parse a head
+  -> (Scn m -> m el) -- ^ callback to parse a body
+  -> m a -- callback's result transformed by the result of head parser
 headedOptional hscn scn pHead pEl = headedBlock hscn scn do
   h <- pHead
   pure $ BodyOpt (h Nothing) (fmap (h . Just) . pEl)
 {-# INLINEABLE headedOptional #-}
 
-headedSome :: (TraversableStream s, MonadParsec e s m) =>
-  Scn m -> -- ^ how to consume white space after the head
-  Scn m -> -- ^ how to consume white space after each line of body
-  m ([el] -> a) -> -- ^ how to parse a head
-  m el -> -- ^ how to parse each element of the body
-  m a -- result of the head parser, applied to parsed elements of body
+headedSome :: (TraversableStream s, MonadParsec e s m)
+  => Scn m -- ^ how to consume white space after the head
+  -> Scn m -- ^ how to consume white space after each line of body
+  -> m ([el] -> a) -- ^ how to parse a head
+  -> m el -- ^ how to parse each element of the body
+  -> m a -- result of the head parser, applied to parsed elements of body
 headedSome hscn scn pHead pEl = headedBlock hscn scn $
   fmap (<$> someBody pEl) pHead
 {-# INLINEABLE headedSome #-}
 
-headedMany :: (TraversableStream s, MonadParsec e s m) =>
-  Scn m -> -- ^ how to consume white space after the head
-  Scn m -> -- ^ how to consume white space after each line of body
-  m ([el] -> a) -> -- ^ how to parse a head
-  m el -> -- ^ how to parse each element of the body
-  m a -- result of the head parser, applied to parsed elements of body
+headedMany :: (TraversableStream s, MonadParsec e s m)
+  => Scn m -- ^ how to consume white space after the head
+  -> Scn m -- ^ how to consume white space after each line of body
+  -> m ([el] -> a) -- ^ how to parse a head
+  -> m el -- ^ how to parse each element of the body
+  -> m a -- result of the head parser, applied to parsed elements of body
 headedMany hscn scn pHead pEl = headedBlock hscn scn $
   fmap (<$> manyBody pEl) pHead
 {-# INLINEABLE headedMany #-}
