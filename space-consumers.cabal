@@ -3,10 +3,11 @@ name:               space-consumers
 version:            0.1.0.0
 synopsis:           Improved space consumers for megaparsec
 homepage:           https://github.com/Lev135/space-consumers
-license:            NONE
+license:            BSD-3-Clause
+license-file:       LICENSE
 author:             Lev Dvorkin
 maintainer:         lev_135@mail.ru
-copyright:
+copyright:          (c) 2022, Lev Dvorkin
 category:           parsing
 extra-source-files: CHANGELOG.md
 
