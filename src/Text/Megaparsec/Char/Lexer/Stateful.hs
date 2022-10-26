@@ -1,20 +1,22 @@
 {-# LANGUAGE BlockArguments             #-}
-{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 module Text.Megaparsec.Char.Lexer.Stateful (
     -- * Space consumer wrappers
     C.Scn,
-    --
-    ScT, runScT,
+    -- * Space consumer's transformer
+    ScT,
+    runScT,
+    mapScT,
+    -- * Space consumer's monad
+    MonadParsecSc (..),
+    setLocalSc,
     -- * White space
     L.space,
     lexeme,
@@ -69,8 +71,7 @@ module Text.Megaparsec.Char.Lexer.Stateful (
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus)
 import Control.Monad.Except (MonadError)
-import Control.Monad.RWS (MonadReader, MonadState)
-import Control.Monad.RWS.Strict (MonadReader(..))
+import Control.Monad.RWS (MonadReader(..), MonadState)
 import Control.Monad.Reader (MonadTrans(..), ReaderT(..), mapReaderT)
 import qualified Control.Monad.State.Lazy as L
 import qualified Control.Monad.State.Strict as S
@@ -90,6 +91,9 @@ newtype ScT m a
 runScT :: ScT m a -> m () -> m a
 runScT = runReaderT . unScT
 
+mapScT :: (m a -> m b) -> ScT m a -> ScT m b
+mapScT f = ScT . mapReaderT f . unScT
+
 instance MonadTrans ScT where
   lift = ScT . lift
 
@@ -99,7 +103,7 @@ deriving instance (MonadError e m) => MonadError e (ScT m)
 instance MonadReader r m => MonadReader r (ScT m) where
   reader = lift . reader
   ask = lift ask
-  local f = ScT . mapReaderT (local f) . unScT
+  local f = mapScT (local f)
 
 class (MonadParsec e s m, MonadParsec e s (BaseSc m)) => MonadParsecSc e s m where
   type BaseSc m :: Type -> Type
