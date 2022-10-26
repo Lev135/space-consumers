@@ -24,13 +24,17 @@ common basics
                     , text
                     , containers
                     , case-insensitive
+                    , transformers
+                    , mtl
   ghc-options:        -Wall
 
 library
   import:             basics
   hs-source-dirs:     src
 
-  exposed-modules:    Text.Megaparsec.Char.Lexer.New
+  exposed-modules:    Text.Megaparsec.Char.Lexer.New.Common
+                    , Text.Megaparsec.Char.Lexer.New
+                    , Text.Megaparsec.Char.Lexer.Stateful
 
 executable examples
   import:             basics

@@ -10,6 +10,7 @@
 module Main where
 
 import Control.Monad.Combinators.Expr (Operator(InfixL), makeExprParser)
+import Control.Monad.Trans (MonadTrans(..))
 import Data.Char (isAlpha)
 import Data.Functor.Identity (Identity)
 import Data.Void (Void)
@@ -17,6 +18,8 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer.New (Scn)
 import qualified Text.Megaparsec.Char.Lexer.New as L
+import Text.Megaparsec.Char.Lexer.Stateful (ScT, runScT)
+import qualified Text.Megaparsec.Char.Lexer.Stateful as SL
 
 type Parser = Parsec Void String
 
@@ -209,9 +212,18 @@ incorrect indentation (got 1, should be greater than 1)
 
 -}
 
-parseTestLF :: (Show a, ShowErrorComponent e, VisualStream s, TraversableStream s) =>
-  ParsecT e s Identity a -> s -> IO ()
-parseTestLF p = parseTest (L.replaceLineFoldError p)
+ex_foldExp' :: Parser Exp
+ex_foldExp' = SL.lineFold space pExp `runScT` hspace
+  where
+    pExp = makeExprParser pTerm operators
+    pTerm = Lit <$> SL.lexeme L.decimal
+      <|> SL.symbol "(" *> pExp <* SL.symbol ")"
+    operators =
+      [ [InfixL (Prod <$ SL.symbol "*")]
+      , [InfixL (Sum <$ SL.symbol "+")]
+      ]
+
+
 
 main :: IO ()
 main = pure ()
