@@ -69,6 +69,7 @@ module Text.Megaparsec.Char.Lexer.New
     someBody,
     manyBody,
     -- ** Line folds
+    replaceLineFoldError,
     lineFold,
     paragraph,
     lineFoldWith,
@@ -296,25 +297,15 @@ headedMany hscn scn pHead pEl = headedBlock hscn scn $
   fmap (<$> manyBody pEl) pHead
 {-# INLINEABLE headedMany #-}
 
-data LineFoldErrInfo = LineFoldErrInfo Int Pos
+data LineFoldErrInfo = LineFoldErrInfo Int Ordering Pos Pos
   deriving (Read, Show)
 
-lineFoldWith :: (TraversableStream s, MonadParsec e s m) =>
-  Ordering -> Pos -> Sc m-> Scn m -> (Sc m -> m a) -> m a
-lineFoldWith ord ref sc scn action =
-  region procErr $
-    action . Sc . void $ unSc sc *> (optional . try) do
-      st <- getParserState
-      lvl' <- scn *> L.indentLevel
-      unless (lvl' `compare` ref == ord) do
-        o <- getOffset
-        setParserState st
-        let i = LineFoldErrInfo o lvl'
-        failure Nothing (E.singleton $ Label $ NE.fromList $ show i)
+replaceLineFoldError :: MonadParsec e s m => m a -> m a
+replaceLineFoldError = region procErr
   where
     procETok (Label lbl) = case readMaybe (NE.toList lbl) of
-      (Just (LineFoldErrInfo o act)) ->
-          Just $ FancyError o $ E.singleton $ ErrorIndentation GT ref act
+      (Just (LineFoldErrInfo o ord ref act)) ->
+          Just $ FancyError o $ E.singleton $ ErrorIndentation ord ref act
       _ -> Nothing
     procETok _ = Nothing
     procErr e = case e of
@@ -323,6 +314,18 @@ lineFoldWith ord ref sc scn action =
               (Just e') -> e'
               Nothing   -> e
           _ -> e
+
+lineFoldWith :: (TraversableStream s, MonadParsec e s m) =>
+  Ordering -> Pos -> Sc m-> Scn m -> (Sc m -> m a) -> m a
+lineFoldWith ord ref sc scn action =
+  replaceLineFoldError . action . Sc . void $ unSc sc *> (optional . try) do
+    st <- getParserState
+    lvl' <- scn *> L.indentLevel
+    unless (lvl' `compare` ref == ord) do
+      o <- getOffset
+      setParserState st
+      let i = LineFoldErrInfo o ord ref lvl'
+      failure Nothing (E.singleton $ Label $ NE.fromList $ show i)
 {-# INLINEABLE lineFoldWith #-}
 
 lineFold ::

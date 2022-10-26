@@ -5,15 +5,18 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE TypeFamilies     #-}
 
 module Main where
 
+import Control.Monad.Combinators.Expr (Operator(InfixL), makeExprParser)
 import Data.Char (isAlpha)
+import Data.Functor.Identity (Identity)
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer.New as L
 import Text.Megaparsec.Char.Lexer.New (Scn)
+import qualified Text.Megaparsec.Char.Lexer.New as L
 
 type Parser = Parsec Void String
 
@@ -154,6 +157,61 @@ ex_fold2 = L.lineFold sc scn \sc' -> do
   bs <- some $ L.symbol sc' "b"
   cs <- many $ L.symbol sc' "c"
   pure $ a : bs <> cs
+
+data Exp
+  = Lit Int
+  | Sum Exp Exp
+  | Prod Exp Exp
+instance Show Exp where
+  show (Lit n)     = show n
+  show (Sum e e')  = "(" <> show e <> " + " <> show e' <> ")"
+  show (Prod e e') = "(" <> show e <> " * " <> show e' <> ")"
+
+ex_foldExp :: Parser Exp
+ex_foldExp = L.lineFold sc scn pExp
+  where
+    pExp sc' = makeExprParser (pTerm sc') (operators sc')
+    pTerm sc' = Lit <$> L.lexeme sc' L.decimal
+      <|> L.symbol sc' "(" *> pExp sc' <* L.symbol sc' ")"
+    operators sc' =
+      [ [InfixL (Prod <$ L.symbol sc' "*")]
+      , [InfixL (Sum <$ L.symbol sc' "+")]
+      ]
+{-
+- Everything is ok:
+>>> parseTest (ex_foldExp <* eof) "1\n + 2 + \n 3"
+((1 + 2) + 3)
+
+- Good error message:
+>>> parseTest (ex_foldExp <* eof) "1\n + 2 + \n3"
+3:1:
+  |
+3 | 3
+  | ^
+incorrect indentation (got 1, should be greater than 1)
+
+- Very bad error message:
+>>> parseTest (ex_foldExp <* eof) "1\n+ 2 + \n 3"
+1:2:
+  |
+1 | 1
+  |  ^
+unexpected newline
+expecting '*', '+', LineFoldErrInfo 2 (Pos 1), digit, end of input, or white space
+
+- Dealing with bad errors by wrapping in `L.replaceLineFoldError`
+>>> parseTest (L.replaceLineFoldError $ ex_foldExp <* eof) "1\n+ 2 + \n 3"
+2:1:
+  |
+2 | + 2 +
+  | ^
+incorrect indentation (got 1, should be greater than 1)
+
+-}
+
+parseTestLF :: (Show a, ShowErrorComponent e, VisualStream s, TraversableStream s) =>
+  ParsecT e s Identity a -> s -> IO ()
+parseTestLF p = parseTest (L.replaceLineFoldError p)
 
 main :: IO ()
 main = pure ()

@@ -41,6 +41,7 @@ executable examples
 
   if flag(examples)
     build-depends:    space-consumers
+                    , parser-combinators
   else
     buildable:        False
 
