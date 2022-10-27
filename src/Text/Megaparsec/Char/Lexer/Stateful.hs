@@ -31,7 +31,7 @@ module Text.Megaparsec.Char.Lexer.Stateful (
     L.indentLevel,
     L.incorrectIndent,
     L.indentGuard,
-    nonIndented,
+    C.nonIndented,
     -- ** Blocks of line
     C.block,
     C.blockWith,
@@ -154,14 +154,6 @@ symbol' :: (MonadParsecSc e s m, FoldCase (Tokens s)) =>
   Tokens s -> m (Tokens s)
 symbol' = L.symbol' sc
 {-# INLINE symbol' #-}
-
--- | Parse a non-indented construction. This ensures that there is no
--- indentation before actual data. Useful, for example, as a wrapper for
--- top-level function definitions.
-nonIndented :: (TraversableStream s, MonadParsecSc e s m) =>
-  m a -> m a
-nonIndented = L.nonIndented sc
-{-# INLINEABLE nonIndented #-}
 
 lineFoldWith :: (TraversableStream s, MonadParsecSc e s m) =>
   Ordering -> Pos -> Scn (BaseSc m) -> m a -> m a

@@ -12,6 +12,13 @@ import Text.Megaparsec.Char (eol)
 import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Read (readMaybe)
 
+-- | Parse a non-indented construction. This ensures that there is no
+-- indentation before actual data. Useful, for example, as a wrapper for
+-- top-level function definitions.
+nonIndented :: (TraversableStream s, MonadParsec e s m) =>
+  m a -> m a
+nonIndented = (L.indentGuard (pure ()) EQ pos1 *>)
+{-# INLINEABLE nonIndented #-}
 
 -- | A type synonym for space and eol consumer. Should be called manually
 -- wherever line break is expected
