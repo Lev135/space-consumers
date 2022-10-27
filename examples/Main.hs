@@ -10,29 +10,19 @@
 module Main where
 
 import Control.Monad.Combinators.Expr (Operator(InfixL), makeExprParser)
-import Control.Monad.Trans (MonadTrans(..))
 import Data.Char (isAlpha)
-import Data.Functor.Identity (Identity)
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer.New (Scn)
 import qualified Text.Megaparsec.Char.Lexer.New as L
-import Text.Megaparsec.Char.Lexer.Stateful (ScT, runScT)
+import Text.Megaparsec.Char.Lexer.Stateful (runScT)
 import qualified Text.Megaparsec.Char.Lexer.Stateful as SL
 
 type Parser = Parsec Void String
 
 sc :: L.Sc Parser
 sc = L.Sc hspace
-
-scn, scn1, scn11 :: Parser ()
--- | Consumes line space and eols, possibly nothing
-scn = hidden space
--- | Consumes line space and eols, including at least one eol
-scn1 = label "end of line" $ hspace *> eol *> hidden space
--- | Consumes line space and exactly one eol
-scn11 = label "end of line" $ hspace *> eol *> hidden hspace
 
 -- | The first example.
 ex1 :: Scn Parser -> Parser [(String, Int)]
@@ -55,25 +45,13 @@ However, it gives a very bad error message if we forgot to break line:
 1:8:
   |
 1 | foo 42 bar 1024
-  |        ^
-incorrect indentation (got 8, should be equal to 1)
-
--}
-ex1_1 :: Parser [(String, Int)]
-ex1_1 = ex1 scn
-
-{- | The error message for forgotten line break is much more accurate:
-
->>> parseTest ex1_2 "foo 42 bar 1024"
-1:8:
-  |
-1 | foo 42 bar 1024
   |        ^^
 unexpected "ba"
 expecting end of line or white space
 -}
-ex1_2 :: Parser [(String, Int)]
-ex1_2 = ex1 scn1
+
+ex1_1 :: Parser [(String, Int)]
+ex1_1 = ex1 space
 
 {- | This one will not accept empty lines:
 
@@ -83,10 +61,10 @@ ex1_2 = ex1 scn1
 2 | <empty line>
   | ^^^
 unexpected "<newline>ba"
-expecting "bar"
+expecting "bar" or white space
 -}
-ex1_3 :: Parser [(String, Int)]
-ex1_3 = ex1 scn11
+ex1_2 :: Parser [(String, Int)]
+ex1_2 = ex1 hspace
 
 {-
 foo&bar:
@@ -134,7 +112,7 @@ ex3 hscn scn = L.headedBlock hscn scn do
     pure [(name1, val1), (name2, val2)]
 
 ex_fold :: Parser [String]
-ex_fold = L.lineFold sc scn \sc' -> do
+ex_fold = L.lineFold sc space \sc' -> do
   a <- L.symbol sc' "a"
   b <- L.symbol sc' "b"
   c <- L.symbol sc' "c"
@@ -155,7 +133,7 @@ incorrect indentation (got 1, should be greater than 1)
 -}
 
 ex_fold2 :: Parser [String]
-ex_fold2 = L.lineFold sc scn \sc' -> do
+ex_fold2 = L.lineFold sc space \sc' -> do
   a <- L.symbol sc' "a"
   bs <- some $ L.symbol sc' "b"
   cs <- many $ L.symbol sc' "c"
@@ -171,7 +149,7 @@ instance Show Exp where
   show (Prod e e') = "(" <> show e <> " * " <> show e' <> ")"
 
 ex_foldExp :: Parser Exp
-ex_foldExp = L.lineFold sc scn pExp
+ex_foldExp = L.lineFold sc space pExp
   where
     pExp sc' = makeExprParser (pTerm sc') (operators sc')
     pTerm sc' = Lit <$> L.lexeme sc' L.decimal

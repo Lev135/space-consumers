@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DeriveFunctor  #-}
+{-# LANGUAGE GADTs          #-}
 module Text.Megaparsec.Char.Lexer.New.Common where
 
 import Control.Monad (unless, void)
@@ -7,6 +8,7 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as E
 import Text.Megaparsec
+import Text.Megaparsec.Char (eol)
 import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Read (readMaybe)
 
@@ -18,14 +20,14 @@ type Scn m
 
 -- | Generalized version of `block`, providing a way to change what is desired
 -- ordering related to a reference indentation level
-blockWith :: (TraversableStream s, MonadParsec e s m)
+blockWith :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   => Ordering -- ^ desired ordering @act \`compare\` ref@
   -> Pos -- ^ reference indentation level
   -> Scn m -- ^ space and eols consumer
   -> (Scn m -> m a) -- ^ callback that uses provided space consumer
   -> m a -- ^ result returned by a callback
 blockWith ord ref scn action =
-  action $ void $ L.indentGuard scn ord ref
+  action $ void $ L.indentGuard (eol *> scn) ord ref
 {-# INLINEABLE blockWith #-}
 
 -- | Parse a block of consecutive lines with the same Indentation
@@ -46,7 +48,7 @@ blockWith ord ref scn action =
 --   string "bar" <* scn
 --   string "baz" -- we do not use eol consumer after the last string!
 -- @
-block :: (TraversableStream s, MonadParsec e s m)
+block :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   => Scn m -> (Scn m -> m a) -> m a
 block scn action = do
   ref <- L.indentLevel
@@ -127,7 +129,7 @@ manyBody pEl = BodyOpt [] (pEl `sepBy`)
 --   string ":"
 --   pure $ someBody (L.symbol hspace name *> L.decimal)
 -- @
-headedBlock :: (TraversableStream s, MonadParsec e s m)
+headedBlock :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   => Scn m -- ^ how to consume white space after the head
   -> Scn m -- ^ how to consume white space after each line of body
   -> m (Body m a) -- ^ how to parse a head and get body parser
@@ -147,7 +149,7 @@ headedBlock hscn scn pContent = do
         else pure a
 {-# INLINEABLE headedBlock #-}
 
-headedOne :: (TraversableStream s, MonadParsec e s m)
+headedOne :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   => Scn m -- ^ how to consume white space after the head
   -> Scn m -- ^ how to consume white space after each line of body
   -> m (el -> a) -- ^ how to parse a head
@@ -157,7 +159,7 @@ headedOne hscn scn pHead pEl = headedBlock hscn scn $
   BodyOne . (\f -> fmap f . pEl) <$> pHead
 {-# INLINEABLE headedOne #-}
 
-headedOptional :: (TraversableStream s, MonadParsec e s m)
+headedOptional :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   => Scn m -- ^ how to consume white space after the head
   -> Scn m -- ^ how to consume white space after each line of body
   -> m (Maybe el -> a) -- ^ how to parse a head
@@ -168,7 +170,7 @@ headedOptional hscn scn pHead pEl = headedBlock hscn scn do
   pure $ BodyOpt (h Nothing) (fmap (h . Just) . pEl)
 {-# INLINEABLE headedOptional #-}
 
-headedSome :: (TraversableStream s, MonadParsec e s m)
+headedSome :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   => Scn m -- ^ how to consume white space after the head
   -> Scn m -- ^ how to consume white space after each line of body
   -> m ([el] -> a) -- ^ how to parse a head
@@ -178,7 +180,7 @@ headedSome hscn scn pHead pEl = headedBlock hscn scn $
   fmap (<$> someBody pEl) pHead
 {-# INLINEABLE headedSome #-}
 
-headedMany :: (TraversableStream s, MonadParsec e s m)
+headedMany :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   => Scn m -- ^ how to consume white space after the head
   -> Scn m -- ^ how to consume white space after each line of body
   -> m ([el] -> a) -- ^ how to parse a head
