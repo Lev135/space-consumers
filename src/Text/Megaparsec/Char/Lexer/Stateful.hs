@@ -118,6 +118,7 @@ class (MonadParsec e s m, MonadParsec e s (BaseSc m)) => MonadParsecSc e s m whe
 
 setLocalSc :: MonadParsecSc e s m => BaseSc m () -> m a -> m a
 setLocalSc = localSc . const
+{-# INLINE setLocalSc #-}
 
 instance MonadParsec e s m => MonadParsecSc e s (ScT m) where
   type BaseSc (ScT m) = m
@@ -142,23 +143,29 @@ instance (Monoid w, MonadParsecSc e s m) => MonadParsecSc e s (S.WriterT w m) wh
 
 lexeme :: MonadParsecSc e s m => m a -> m a
 lexeme = L.lexeme sc
+{-# INLINE lexeme #-}
 
 symbol :: MonadParsecSc e s m => Tokens s -> m (Tokens s)
 symbol = L.symbol sc
+{-# INLINE symbol #-}
 
 symbol' :: (MonadParsecSc e s m, FoldCase (Tokens s)) =>
   Tokens s -> m (Tokens s)
 symbol' = L.symbol' sc
+{-# INLINE symbol' #-}
 
 lineFoldWith :: (TraversableStream s, MonadParsecSc e s m) =>
   Ordering -> Pos -> Scn (BaseSc m) -> m a -> m a
 lineFoldWith ord ref scn p = askSc >>= \sc0 ->
   C.lineFoldWith ord ref sc0 scn (`setLocalSc` p)
+{-# INLINEABLE lineFoldWith #-}
 
 lineFold :: (TraversableStream s, MonadParsecSc e s m) =>
   Scn (BaseSc m) -> m a -> m a
 lineFold scn p = L.indentLevel >>= \lvl -> lineFoldWith GT lvl scn p
+{-# INLINEABLE lineFold #-}
 
 paragraph :: (TraversableStream s, MonadParsecSc e s m) =>
   Scn (BaseSc m) -> m a -> m a
 paragraph scn p = L.indentLevel >>= \lvl -> lineFoldWith EQ lvl scn p
+{-# INLINEABLE paragraph #-}
