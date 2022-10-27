@@ -50,6 +50,7 @@ module Text.Megaparsec.Char.Lexer.New
     L.indentLevel,
     L.incorrectIndent,
     L.indentGuard,
+    nonIndented,
     -- ** Blocks of line
     C.block,
     C.blockWith,
@@ -98,6 +99,15 @@ import qualified Text.Megaparsec.Char.Lexer.New.Common as C
 -- unwrap it manually
 newtype Sc m
   = Sc { unSc :: m () }
+
+-- | Parse a non-indented construction. This ensures that there is no
+-- indentation before actual data. Useful, for example, as a wrapper for
+-- top-level function definitions.
+nonIndented :: (TraversableStream s, MonadParsec e s m) =>
+  Sc m -> m a -> m a
+nonIndented = L.nonIndented . unSc
+{-# INLINEABLE nonIndented #-}
+
 
 -- | A @lexeme sc p@ behaves like @p@ and consumes spaces by @sc@ after it
 lexeme :: MonadParsec e s m =>
