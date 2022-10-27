@@ -121,6 +121,7 @@ lineFoldWith :: (TraversableStream s, MonadParsec e s m) =>
   Ordering -> Pos -> Sc m -> C.Scn m -> (Sc m -> m a) -> m a
 lineFoldWith ord ref sc scn action =
   C.lineFoldWith ord ref (unSc sc) scn (action . Sc)
+{-# INLINEABLE lineFoldWith #-}
 
 lineFold ::
   (TraversableStream s, MonadParsec e s m) =>
