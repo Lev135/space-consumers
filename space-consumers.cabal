@@ -32,9 +32,9 @@ library
   import:             basics
   hs-source-dirs:     src
 
-  exposed-modules:    Text.Megaparsec.Char.Lexer.New.Common
-                    , Text.Megaparsec.Char.Lexer.New
+  exposed-modules:    Text.Megaparsec.Char.Lexer.New
                     , Text.Megaparsec.Char.Lexer.Stateful
+  other-modules:      Text.Megaparsec.Char.Lexer.New.Common
 
 executable examples
   import:             basics
@@ -58,6 +58,17 @@ benchmark bench
   main-is:            Bench.hs
 
   build-depends:      criterion
+                    , space-consumers
+
+test-suite sc-test
+  import:             basics
+  type:               exitcode-stdio-1.0
+  hs-source-dirs:     test
+  main-is:            Spec.hs
+
+  build-depends:      hspec
+                    , hspec-megaparsec
+                    , raw-strings-qq
                     , space-consumers
 
 flag examples

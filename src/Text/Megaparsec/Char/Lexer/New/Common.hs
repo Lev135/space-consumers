@@ -102,7 +102,7 @@ optionalBody f = BodyOpt Nothing (fmap Just . f)
 -- prop> someBody pEl = oneBody (pEl `sepBy1`)
 someBody :: (TraversableStream s, MonadParsec e s m)
   => m el -> Body m [el]
-someBody pEl = BodyOne (pEl `sepBy1`)
+someBody pEl = BodyOne (\scn -> pEl `sepBy1` try (scn <* notFollowedBy eof))
 {-# INLINEABLE someBody #-}
 
 -- | Parse many (maybe zero) lines by given parser
@@ -110,7 +110,7 @@ someBody pEl = BodyOne (pEl `sepBy1`)
 -- prop> manyBody pEl = optionBody [] (pEl `sepBy`)
 manyBody :: (TraversableStream s, MonadParsec e s m)
   => m el -> Body m [el]
-manyBody pEl = BodyOpt [] (pEl `sepBy`)
+manyBody pEl = BodyOpt [] (\scn -> pEl `sepBy` try (scn <* notFollowedBy eof))
 {-# INLINEABLE manyBody #-}
 
 -- | Parse a head of the block and then its body, depending on what `Body`
@@ -149,11 +149,10 @@ headedBlock hscn scn pContent = do
     BodyOne pa -> do
       lvl <- L.indentGuard hscn GT ref
       blockWith EQ lvl scn pa
-    BodyOpt a pa -> do
-      lvl <- hscn *> L.indentLevel
-      if lvl > ref
-        then blockWith EQ lvl scn pa
-        else pure a
+    BodyOpt a pa ->
+      option a do
+        lvl <- try $ L.indentGuard hscn GT ref <* notFollowedBy eof
+        blockWith EQ lvl scn pa
 {-# INLINEABLE headedBlock #-}
 
 headedOne :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
