@@ -106,6 +106,7 @@ instance MonadReader r m => MonadReader r (ScT m) where
   reader = lift . reader
   ask = lift ask
   local f = mapScT (local f)
+deriving instance MonadFail m => MonadFail (ScT m)
 
 class (MonadParsec e s m, MonadParsec e s (BaseSc m)) => MonadParsecSc e s m where
   type BaseSc m :: Type -> Type
@@ -142,6 +143,7 @@ instance (Monoid w, MonadParsecSc e s m) => MonadParsecSc e s (L.WriterT w m) wh
 instance (Monoid w, MonadParsecSc e s m) => MonadParsecSc e s (S.WriterT w m) where
   type BaseSc (S.WriterT w m) = BaseSc m
   localSc f = S.mapWriterT $ localSc f
+
 
 lexeme :: MonadParsecSc e s m => m a -> m a
 lexeme = L.lexeme sc
