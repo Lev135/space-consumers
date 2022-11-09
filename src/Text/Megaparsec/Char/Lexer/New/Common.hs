@@ -234,6 +234,7 @@ headedOne :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   -> m a -- callback's result transformed by the result of head parser
 headedOne pHead pEl = headedBlock $
   BodyOne . (\f -> fmap f . pEl) <$> pHead
+infixr 1 `headedOne`
 {-# INLINEABLE headedOne #-}
 
 headedOptional :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
@@ -243,6 +244,7 @@ headedOptional :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
 headedOptional pHead pEl = headedBlock do
   h <- pHead
   pure $ BodyOpt (h Nothing) (fmap (h . Just) . pEl)
+infixr 1 `headedOptional`
 {-# INLINEABLE headedOptional #-}
 
 headedSome :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
@@ -251,6 +253,7 @@ headedSome :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   -> m a -- result of the head parser, applied to parsed elements of body
 headedSome pHead pEl = headedBlock $
   fmap (<$> someBody pEl) pHead
+infixr 1 `headedSome`
 {-# INLINEABLE headedSome #-}
 
 headedMany :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
@@ -259,6 +262,7 @@ headedMany :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
   -> m a -- result of the head parser, applied to parsed elements of body
 headedMany pHead pEl = headedBlock $
   fmap (<$> manyBody pEl) pHead
+infixr 1 `headedMany`
 {-# INLINEABLE headedMany #-}
 
 data LineFoldErrInfo = LineFoldErrInfo Int Ordering Pos Pos

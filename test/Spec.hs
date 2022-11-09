@@ -62,10 +62,10 @@ main = hspec do
       it "incorrect indentation II (dec)" do
         prs' p " a\n b\nc\n" `failsLeaving` "c\n"
   describe "headedMany" do
-    let pn = (length <$ LN.mayLine scn (LN.symbol sc "a"))
+    let pn = length <$ LN.mayLine scn (LN.symbol sc "a")
                 `LN.headedMany` line (LN.symbol sc "a")
         ps = flip LS.runScT sc $
-          (length <$ LS.mayLine scn (LS.symbol "a"))
+          length <$ LS.mayLine scn (LS.symbol "a")
             `LS.headedMany` line (LS.symbol "a")
     for_ [(pn, "New"), (ps, "Stateful")] \(p, lbl) -> describe lbl do
       it "empty" do
