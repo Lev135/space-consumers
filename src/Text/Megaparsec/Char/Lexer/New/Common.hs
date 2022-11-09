@@ -8,34 +8,109 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as E
 import Text.Megaparsec
-import Text.Megaparsec.Char (eol)
 import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Read (readMaybe)
+
+-- | Newtype wrapper for line space consumer.
+--
+-- In common cases you should use standard combinators rather than unwrap it manually
+newtype Sc m
+  = Sc { unSc :: m () }
+
+-- | Construct a line space consumer
+makeSc :: MonadParsec e s m =>
+  m () -- ^ how to consume some line spaces (at least one)
+  -> m () -- ^ how to consume a line comment
+  -> Sc m
+makeSc spaceC lineCommentC = Sc $ L.space spaceC lineCommentC empty
+
+-- | Newtype wrapper for line space & eols consumer. Can consume no eols at all.
+--
+-- In common cases you should use standard combinators rather than unwrap it manually
+newtype Scn m
+  = Scn { unScn :: m () }
+
+-- | Construct an eol consumer
+makeScn :: MonadParsec e s m =>
+  m () -- ^ how to consume some line spaces (at least one)
+  -> m () -- ^ how to consume some eols (at least one)
+  -> m () -- ^ how to consume a line comment
+  -> m () -- ^ how to consume a block comment
+  -> Scn m
+makeScn spaceC eolC lineCommentC blockCommentC =
+  Scn $ L.space (spaceC <|> eolC) lineCommentC blockCommentC
+
+-- | Newtype wrapper for line space & eols consumer. Must consume at least one
+-- eol or ensure that we are at the end of input.
+--
+-- In common cases you should use standard combinators rather than unwrap it manually
+newtype Scn1 m
+  = Scn1 { unScn1 :: m () }
+
+-- | Construct an eol consumer
+makeScn1 :: MonadParsec e s m =>
+  m () -- ^ how to consume some line spaces (at least one)
+  -> m () -- ^ how to consume some eols (at least one)
+  -> m () -- ^ how to consume a line comment
+  -> m () -- ^ how to consume a block comment
+  -> Scn1 m
+makeScn1 spaceC eolC lineCommentC blockCommentC =
+  Scn1 $ unSc (makeSc spaceC lineCommentC)
+          *> (eolC <|> eof)
+          *> unScn (makeScn spaceC eolC lineCommentC blockCommentC)
+
+-- | Construct all space consumers at once
+makeScs :: MonadParsec e s m =>
+  m () -- ^ how to consume some line spaces (at least one)
+  -> m () -- ^ how to consume some eols (at least one)
+  -> m () -- ^ how to consume a line comment
+  -> m () -- ^ how to consume a block comment
+  -> (Sc m, Scn m, Scn1 m)
+makeScs spaceC eolC lineCommentC blockCommentC =
+  ( Sc sc, Scn scn, Scn1 scn1 )
+    where
+      sc = L.space spaceC lineCommentC empty
+      scn = L.space (spaceC <|> eolC) lineCommentC blockCommentC
+      scn1 = sc *> (eolC <|> eof) *> scn
+
+-- | @line scn1 p@ behaves like @p@ but consumes at least one @eol@ after
+line :: MonadParsec e s m => Scn1 m -> m a -> m a
+line (Scn1 scn1) pa = pa <* scn1
+
+-- | @mayLine scn p@ behaves like @p@ but consumes @eols@ after if they are there
+mayLine :: MonadParsec e s m => Scn m -> m a -> m a
+mayLine (Scn scn) pa = pa <* scn
+
+-- | @Guard m@ is just a synonym to @m ()@. However, we provide it here to
+-- establish one important invariant of all guards: they __never__ consume any
+-- input so, to prevent loosing useful error message you __should not__ wrap
+-- `Guard` call into `try` combinator.
+type Guard m = m ()
+
+-- | @indentGuard ord ref@ checks if actual indentation @act@ is acceptable,
+-- i. e. @act `compare` ref == ord@ and we are not at the end of input.
+-- Produces an `IncorrectIndent` error otherwise if the first fails and
+-- "unexpected end of input" if the second fails.
+--
+-- If for some reasons you need to check that indentation of the last line in
+-- file, write your one combinator using `indentLevel` and `incorrectIndent`
+-- or use a standard `indentGuard` from `Text.Megaparsec.Char.Lexer`
+--
+-- Note, that we assume, that all white spaces have already been consumed
+indentGuard :: (TraversableStream s, MonadParsec e s m) =>
+  Ordering -> Pos -> Guard m
+indentGuard ord ref = void $
+  L.indentGuard (pure ()) ord ref <* notFollowedBy eof
 
 -- | Parse a non-indented construction. This ensures that there is no
 -- indentation before actual data. Useful, for example, as a wrapper for
 -- top-level function definitions.
+--
+-- Note, that we assume, that all white spaces have already been consumed
 nonIndented :: (TraversableStream s, MonadParsec e s m) =>
   m a -> m a
 nonIndented = (L.indentGuard (pure ()) EQ pos1 *>)
 {-# INLINEABLE nonIndented #-}
-
--- | A type synonym for space and eol consumer. Should be called manually
--- wherever line break is expected
-type Scn m
-  = m ()
-
--- | Generalized version of `block`, providing a way to change what is desired
--- ordering related to a reference indentation level
-blockWith :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
-  => Ordering -- ^ desired ordering @act \`compare\` ref@
-  -> Pos -- ^ reference indentation level
-  -> Scn m -- ^ space and eols consumer
-  -> (Scn m -> m a) -- ^ callback that uses provided space consumer
-  -> m a -- ^ result returned by a callback
-blockWith ord ref scn action =
-  action $ void $ L.indentGuard (eol *> scn) ord ref
-{-# INLINEABLE blockWith #-}
 
 -- | Parse a block of consecutive lines with the same Indentation
 --
@@ -50,16 +125,16 @@ blockWith ord ref scn action =
 -- you can use something like this
 --
 -- @
--- block space $ \scn -> do
---   string "foo" <* scn
---   string "bar" <* scn
---   string "baz" -- we do not use eol consumer after the last string!
+-- block $ \grd -> do
+--   line space $ string "foo"
+--   grd
+--   line space $ string "bar"
+--   grd
+--   line space $ string "baz"
 -- @
-block :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
-  => Scn m -> (Scn m -> m a) -> m a
-block scn action = do
-  ref <- L.indentLevel
-  blockWith EQ ref scn action
+block :: (TraversableStream s, MonadParsec e s m)
+  => (Guard m -> m a) -> m a
+block action = L.indentLevel >>= \lvl -> action (indentGuard EQ lvl)
 {-# INLINEABLE block #-}
 
 -- | Opaque type, containing information about parsing `headedBlock`s body
@@ -67,8 +142,8 @@ block scn action = do
 -- `Functor` instance can be used to modify a result value
 data Body m a
   = BodyNone a
-  | BodyOne (Scn m -> m a)
-  | BodyOpt a (Scn m -> m a)
+  | BodyOne (Guard m -> m a)
+  | BodyOpt a (Guard m -> m a)
   deriving (Functor)
 
 -- | Don't parse anything, just return a constant value. Can be used if after
@@ -76,25 +151,25 @@ data Body m a
 pureBody :: a -> Body m a
 pureBody = BodyNone
 
--- | Parse a body by given callback. Callback can use space consumer to
--- parse a multiline body. If the body consists of some identical parts use
--- `someBody`/`manyBody` instead.
+-- | Parse a body by given callback. Callback should check indentation level
+-- using `Guard` at the beginning of each line. If the body consists of some
+-- identical parts use `someBody`/`manyBody` instead.
 --
 -- Note, that it will always fail, if the body is empty, even if a callback can
 -- succeed without consuming input. Use `optionBody`/`optionalBody` in this case.
-oneBody :: (Scn m -> m a) -> Body m a
+oneBody :: (Guard m -> m a) -> Body m a
 oneBody = BodyOne
 
 -- | Parse a body by given callback, if the next line after a head has greater
 -- indentation level, otherwise return a constant value
-optionBody :: a -> (Scn m -> m a) -> Body m a
+optionBody :: a -> (Guard m -> m a) -> Body m a
 optionBody = BodyOpt
 
 -- | Parse a body by given callback, if the next line after a head has greater
 -- indentation level, otherwise return Nothing
 --
 -- prop> optionalBody = optionBody Nothing (fmap Just . f)
-optionalBody :: Functor m => (Scn m -> m a) -> Body m (Maybe a)
+optionalBody :: Functor m => (Guard m -> m a) -> Body m (Maybe a)
 optionalBody f = BodyOpt Nothing (fmap Just . f)
 
 -- | Parse some (greater, than zero) number of lines by given parser
@@ -102,7 +177,7 @@ optionalBody f = BodyOpt Nothing (fmap Just . f)
 -- prop> someBody pEl = oneBody (pEl `sepBy1`)
 someBody :: (TraversableStream s, MonadParsec e s m)
   => m el -> Body m [el]
-someBody pEl = BodyOne (\scn -> pEl `sepBy1` try (scn <* notFollowedBy eof))
+someBody pEl = BodyOne (pEl `sepBy1`)
 {-# INLINEABLE someBody #-}
 
 -- | Parse many (maybe zero) lines by given parser
@@ -110,7 +185,7 @@ someBody pEl = BodyOne (\scn -> pEl `sepBy1` try (scn <* notFollowedBy eof))
 -- prop> manyBody pEl = optionBody [] (pEl `sepBy`)
 manyBody :: (TraversableStream s, MonadParsec e s m)
   => m el -> Body m [el]
-manyBody pEl = BodyOpt [] (\scn -> pEl `sepBy` try (scn <* notFollowedBy eof))
+manyBody pEl = BodyOpt [] (pEl `sepBy`)
 {-# INLINEABLE manyBody #-}
 
 -- | Parse a head of the block and then its body, depending on what `Body`
@@ -137,62 +212,52 @@ manyBody pEl = BodyOpt [] (\scn -> pEl `sepBy` try (scn <* notFollowedBy eof))
 --   pure $ someBody (L.symbol hspace name *> L.decimal)
 -- @
 headedBlock :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
-  => Scn m -- ^ how to consume white space after the head
-  -> Scn m -- ^ how to consume white space after each line of body
-  -> m (Body m a) -- ^ how to parse a head and get body parser
+  => m (Body m a) -- ^ how to parse a head and get body parser
   -> m a -- ^ the value, returned by body parser
-headedBlock hscn scn pContent = do
+headedBlock pContent = do
   ref <- L.indentLevel
   content <- pContent
   case content of
     BodyNone a -> pure a
     BodyOne pa -> do
-      lvl <- L.indentGuard hscn GT ref
-      blockWith EQ lvl scn pa
+      lvl <- L.indentLevel <* indentGuard GT ref
+      pa (indentGuard EQ lvl)
     BodyOpt a pa ->
       option a do
-        lvl <- try $ L.indentGuard hscn GT ref <* notFollowedBy eof
-        blockWith EQ lvl scn pa
+        lvl <- L.indentLevel <* indentGuard GT ref
+        pa (indentGuard EQ lvl)
 {-# INLINEABLE headedBlock #-}
 
 headedOne :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
-  => Scn m -- ^ how to consume white space after the head
-  -> Scn m -- ^ how to consume white space after each line of body
-  -> m (el -> a) -- ^ how to parse a head
-  -> (Scn m -> m el) -- ^ callback to parse a body
+  => m (el -> a) -- ^ how to parse a head
+  -> (Guard m -> m el) -- ^ callback to parse a body
   -> m a -- callback's result transformed by the result of head parser
-headedOne hscn scn pHead pEl = headedBlock hscn scn $
+headedOne pHead pEl = headedBlock $
   BodyOne . (\f -> fmap f . pEl) <$> pHead
 {-# INLINEABLE headedOne #-}
 
 headedOptional :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
-  => Scn m -- ^ how to consume white space after the head
-  -> Scn m -- ^ how to consume white space after each line of body
-  -> m (Maybe el -> a) -- ^ how to parse a head
-  -> (Scn m -> m el) -- ^ callback to parse a body
+  => m (Maybe el -> a) -- ^ how to parse a head
+  -> (Guard m -> m el) -- ^ callback to parse a body
   -> m a -- callback's result transformed by the result of head parser
-headedOptional hscn scn pHead pEl = headedBlock hscn scn do
+headedOptional pHead pEl = headedBlock do
   h <- pHead
   pure $ BodyOpt (h Nothing) (fmap (h . Just) . pEl)
 {-# INLINEABLE headedOptional #-}
 
 headedSome :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
-  => Scn m -- ^ how to consume white space after the head
-  -> Scn m -- ^ how to consume white space after each line of body
-  -> m ([el] -> a) -- ^ how to parse a head
+  => m ([el] -> a) -- ^ how to parse a head
   -> m el -- ^ how to parse each element of the body
   -> m a -- result of the head parser, applied to parsed elements of body
-headedSome hscn scn pHead pEl = headedBlock hscn scn $
+headedSome pHead pEl = headedBlock $
   fmap (<$> someBody pEl) pHead
 {-# INLINEABLE headedSome #-}
 
 headedMany :: (TraversableStream s, MonadParsec e s m, Token s ~ Char)
-  => Scn m -- ^ how to consume white space after the head
-  -> Scn m -- ^ how to consume white space after each line of body
-  -> m ([el] -> a) -- ^ how to parse a head
+  => m ([el] -> a) -- ^ how to parse a head
   -> m el -- ^ how to parse each element of the body
   -> m a -- result of the head parser, applied to parsed elements of body
-headedMany hscn scn pHead pEl = headedBlock hscn scn $
+headedMany pHead pEl = headedBlock $
   fmap (<$> manyBody pEl) pHead
 {-# INLINEABLE headedMany #-}
 
@@ -214,15 +279,16 @@ replaceLineFoldError = region procErr
               Nothing   -> e
           _ -> e
 
-lineFoldWith :: (TraversableStream s, MonadParsec e s m, MonadParsec e s n) =>
+-- | general version of lineFold. Is not exposed
+lineFoldWithG :: (TraversableStream s, MonadParsec e s m, MonadParsec e s n) =>
   Ordering -> Pos -> n () -> Scn n -> (n () -> m a) -> m a
-lineFoldWith ord ref sc scn action =
+lineFoldWithG ord ref sc scn action =
   replaceLineFoldError . action . void $ sc *> (optional . try) do
     st <- getParserState
-    lvl' <- scn *> L.indentLevel
+    lvl' <- unScn scn *> L.indentLevel
     unless (lvl' `compare` ref == ord) do
       o <- getOffset
       setParserState st
       let i = LineFoldErrInfo o ord ref lvl'
       failure Nothing (E.singleton $ Label $ NE.fromList $ show i)
-{-# INLINEABLE lineFoldWith #-}
+{-# INLINEABLE lineFoldWithG #-}

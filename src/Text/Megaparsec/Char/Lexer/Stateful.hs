@@ -9,7 +9,11 @@
 {-# LANGUAGE UndecidableInstances       #-}
 module Text.Megaparsec.Char.Lexer.Stateful (
     -- * Space consumer wrappers
-    C.Scn,
+    Sc (..), Scn (..), Scn1 (..),
+    makeSc, makeScn, makeScn1, makeScs,
+    L.skipLineComment,
+    L.skipBlockComment,
+    L.skipBlockCommentNested,
     -- * Space consumer's transformer
     ScT,
     runScT,
@@ -18,40 +22,38 @@ module Text.Megaparsec.Char.Lexer.Stateful (
     MonadParsecSc (..),
     setLocalSc,
     -- * White space
-    L.space,
     lexeme,
     symbol,
     symbol',
-    L.skipLineComment,
-    L.skipBlockComment,
-    L.skipBlockCommentNested,
+    line,
+    mayLine,
 
     -- * Indentation
+    Guard,
     -- ** Primitives for indentation-sensitive parsing
     L.indentLevel,
     L.incorrectIndent,
-    L.indentGuard,
-    C.nonIndented,
-    -- ** Blocks of line
-    C.block,
-    C.blockWith,
+    indentGuard,
+    nonIndented,
+    -- ** Simple block
+    block,
     -- ** Headed blocks
     -- *** Simple combinators
-    C.headedOne,
-    C.headedOptional,
-    C.headedSome,
-    C.headedMany,
+    headedOne,
+    headedOptional,
+    headedSome,
+    headedMany,
     -- *** General combinators
-    C.headedBlock,
-    C.Body,
-    C.pureBody,
-    C.oneBody,
-    C.optionBody,
-    C.optionalBody,
-    C.someBody,
-    C.manyBody,
+    headedBlock,
+    Body,
+    pureBody,
+    oneBody,
+    optionBody,
+    optionalBody,
+    someBody,
+    manyBody,
     -- ** Line folds
-    C.replaceLineFoldError,
+    replaceLineFoldError,
     lineFold,
     paragraph,
     lineFoldWith,
@@ -72,8 +74,8 @@ module Text.Megaparsec.Char.Lexer.Stateful (
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus)
 import Control.Monad.Except (MonadError)
+import Control.Monad.Reader (MonadTrans(..), ReaderT(..), asks, mapReaderT)
 import Control.Monad.RWS (MonadReader(..), MonadState)
-import Control.Monad.Reader (MonadTrans(..), ReaderT(..), mapReaderT)
 import qualified Control.Monad.State.Lazy as L
 import qualified Control.Monad.State.Strict as S
 import qualified Control.Monad.Trans.Writer.Lazy as L
@@ -82,14 +84,13 @@ import Data.CaseInsensitive (FoldCase)
 import Data.Kind (Type)
 import Text.Megaparsec
 import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec.Char.Lexer.New.Common (Scn)
-import qualified Text.Megaparsec.Char.Lexer.New.Common as C
+import Text.Megaparsec.Char.Lexer.New.Common
 
 newtype ScT m a
-  = ScT { unScT :: ReaderT (m ()) m a }
+  = ScT { unScT :: ReaderT (Sc m) m a }
   deriving (Alternative, Applicative, Functor, Monad, MonadPlus)
 
-runScT :: ScT m a -> m () -> m a
+runScT :: ScT m a -> Sc m -> m a
 runScT = runReaderT . unScT
 
 mapScT :: (m a -> m b) -> ScT m a -> ScT m b
@@ -108,23 +109,23 @@ instance MonadReader r m => MonadReader r (ScT m) where
 
 class (MonadParsec e s m, MonadParsec e s (BaseSc m)) => MonadParsecSc e s m where
   type BaseSc m :: Type -> Type
-  askSc :: m (BaseSc m ())
+  askSc :: m (Sc (BaseSc m))
   default askSc :: (m ~ t n, MonadTrans t, MonadParsecSc e s n, BaseSc n ~ BaseSc m)
-    => m (BaseSc m ())
+    => m (Sc (BaseSc m))
   askSc = lift askSc
   sc :: m ()
   default sc :: (m ~ t n, MonadTrans t, MonadParsecSc e s n) => m ()
   sc = lift sc
-  localSc :: (BaseSc m () -> BaseSc m ()) -> m a -> m a
+  localSc :: (Sc (BaseSc m) -> Sc (BaseSc m)) -> m a -> m a
 
-setLocalSc :: MonadParsecSc e s m => BaseSc m () -> m a -> m a
+setLocalSc :: MonadParsecSc e s m => Sc (BaseSc m) -> m a -> m a
 setLocalSc = localSc . const
 {-# INLINE setLocalSc #-}
 
 instance MonadParsec e s m => MonadParsecSc e s (ScT m) where
   type BaseSc (ScT m) = m
   askSc = ScT ask
-  sc = ScT $ ask >>= lift
+  sc = ScT $ asks unSc >>= lift
   localSc f = ScT . local f . unScT
 instance MonadParsecSc e s m => MonadParsecSc e s (ReaderT r m) where
   type BaseSc (ReaderT r m) = BaseSc m
@@ -158,7 +159,7 @@ symbol' = L.symbol' sc
 lineFoldWith :: (TraversableStream s, MonadParsecSc e s m) =>
   Ordering -> Pos -> Scn (BaseSc m) -> m a -> m a
 lineFoldWith ord ref scn p = askSc >>= \sc0 ->
-  C.lineFoldWith ord ref sc0 scn (`setLocalSc` p)
+  lineFoldWithG ord ref (unSc sc0) scn (\sc' -> Sc sc' `setLocalSc` p)
 {-# INLINEABLE lineFoldWith #-}
 
 lineFold :: (TraversableStream s, MonadParsecSc e s m) =>

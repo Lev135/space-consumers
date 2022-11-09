@@ -1,5 +1,7 @@
-{-# LANGUAGE BlockArguments   #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE BlockArguments            #-}
+{-# LANGUAGE ConstraintKinds           #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 module Main (main) where
 
@@ -14,27 +16,32 @@ import qualified Text.Megaparsec.Char.Lexer.New as LN
 import qualified Text.Megaparsec.Char.Lexer.Stateful as LS
 
 type Parser = Parsec Void String
+type ParserM = MonadParsec Void String
 
-sc :: LN.Sc Parser
-sc = LN.Sc hspace
+sc :: ParserM m => LN.Sc m
+scn :: ParserM m => LN.Scn m
+scn1 :: ParserM m => LN.Scn1 m
+(sc, scn, scn1) = LN.makeScs hspace1 (void eol) empty empty
 
+line :: MonadParsec Void String m => m a -> m a
+line = LN.line scn1
 
 main :: IO ()
 main = hspec do
   describe "block simple" do
-    let pn = LN.block space \sp -> do
-            a <- LN.symbol sc "a"
-            sp
-            b <- LN.symbol sc "b"
-            sp
-            c <- LN.symbol sc "c"
+    let pn = LN.block \grd -> do
+            a <- line $ LN.symbol sc "a"
+            grd
+            b <- line $ LN.symbol sc "b"
+            grd
+            c <- line $ LN.symbol sc "c"
             pure [a, b, c]
-        ps = flip LS.runScT hspace $ LS.block space \sp -> do
-            a <- LS.symbol "a"
-            sp
-            b <- LS.symbol "b"
-            sp
-            c <- LS.symbol "c"
+        ps = flip LS.runScT sc $ LS.block \grd -> do
+            a <- line $ LS.symbol "a"
+            grd
+            b <- line $ LS.symbol "b"
+            grd
+            c <- line $ LS.symbol "c"
             pure [a, b, c]
     for_ [(pn, "New"), (ps, "Stateful")] \(p, lbl) -> describe lbl do
       it "simple" do
@@ -42,10 +49,10 @@ main = hspec do
         prs' p "a\nb\nc" `succeedsLeaving` ""
       it "extra spaces" do
         prs p "a  \nb \nc   \n  " `shouldParse` ["a", "b", "c"]
-        prs' p "a  \nb \nc   \n  " `succeedsLeaving` "\n  "
+        prs' p "a  \nb \nc   \n  " `succeedsLeaving` ""
       it "indented (1)" do
         prs p " a\n b\n c\n" `shouldParse` ["a", "b", "c"]
-        prs' p " a\n b\n c\n" `succeedsLeaving` "\n"
+        prs' p " a\n b\n c\n" `succeedsLeaving` ""
       it "incorrect indentation (inc)" do
         prs' p "a\n b\nc\n" `failsLeaving` "b\nc\n"
       it "incorrect indentation (dec)" do
@@ -55,58 +62,58 @@ main = hspec do
       it "incorrect indentation II (dec)" do
         prs' p " a\n b\nc\n" `failsLeaving` "c\n"
   describe "headedMany" do
-    let pn = LN.headedMany space space (length <$ LN.symbol sc "a") $ LN.symbol sc "a"
-        ps = flip LS.runScT hspace $
-              LS.headedMany space space (length <$ LS.symbol "a") $ LS.symbol "a"
+    let pn = (length <$ LN.mayLine scn (LN.symbol sc "a"))
+                `LN.headedMany` line (LN.symbol sc "a")
+        ps = flip LS.runScT sc $
+          (length <$ LS.mayLine scn (LS.symbol "a"))
+            `LS.headedMany` line (LS.symbol "a")
     for_ [(pn, "New"), (ps, "Stateful")] \(p, lbl) -> describe lbl do
       it "empty" do
         prs p "a" `shouldParse` 0
         prs' p "a" `succeedsLeaving` ""
       it "empty with eol" do
         prs p "a\n" `shouldParse` 0
-        prs' p "a\n" `succeedsLeaving` "\n"
+        prs' p "a\n" `succeedsLeaving` ""
       it "empty with eols" do
         prs p "a  \n  \n \n " `shouldParse` 0
-        prs' p "a  \n  \n \n" `succeedsLeaving` "\n  \n \n"
+        prs' p "a  \n  \n \n" `succeedsLeaving` ""
       it "empty with eols and white space" do
         prs p "a  \n  \n \n " `shouldParse` 0
-        prs' p "a  \n  \n \n " `succeedsLeaving` "\n  \n \n "
+        prs' p "a  \n  \n \n " `succeedsLeaving` ""
       it "one" do
         prs p "a\n a" `shouldParse` 1
         prs' p "a\n a" `succeedsLeaving` ""
       it "one with eol" do
         prs p "a\n a\n" `shouldParse` 1
-        prs' p "a\n a\n" `succeedsLeaving` "\n"
+        prs' p "a\n a\n" `succeedsLeaving` ""
       it "one with eol and white space" do
         prs p "a\n a\n" `shouldParse` 1
-        prs' p "a\n a\n " `succeedsLeaving` "\n "
+        prs' p "a\n a\n " `succeedsLeaving` ""
 
   describe "block > headedOne" do
-    let nHeadedOne = LN.headedOne space space
-        sHeadedOne = LS.headedOne space space
-        pn = LN.block space \sp -> do
-            as <- ((:) <$> LN.symbol sc "a")
-              `nHeadedOne` \sp' -> do
-                a' <- LN.symbol sc "a'"
-                sp'
-                a'' <- LN.symbol sc "a''"
+    let pn = LN.block \grd -> do
+            as <- LN.mayLine scn ((:) <$> LN.symbol sc "a")
+              `LN.headedOne` \grd' -> do
+                a' <- line $ LN.symbol sc "a'"
+                grd'
+                a'' <- line $ LN.symbol sc "a''"
                 pure [a', a'']
-            sp
-            b <- LN.symbol sc "b"
-            sp
-            c <- LN.symbol sc "c"
+            grd
+            b <- line $ LN.symbol sc "b"
+            grd
+            c <- line $ LN.symbol sc "c"
             pure $ as <> [b, c]
-        ps = flip LS.runScT hspace $ LS.block space \sp -> do
-            as <- ((:) <$> LS.symbol "a")
-              `sHeadedOne` \sp' -> do
-                a' <- LS.symbol "a'"
-                sp'
-                a'' <- LS.symbol "a''"
+        ps = flip LS.runScT sc $ LS.block \grd -> do
+            as <- LN.mayLine scn ((:) <$> LS.symbol "a")
+              `LS.headedOne` \grd' -> do
+                a' <- line $ LS.symbol "a'"
+                grd'
+                a'' <- line $ LS.symbol "a''"
                 pure [a', a'']
-            sp
-            b <- LS.symbol "b"
-            sp
-            c <- LS.symbol "c"
+            grd
+            b <- line $ LS.symbol "b"
+            grd
+            c <- line $ LS.symbol "c"
             pure $ as <> [b, c]
     for_ [(pn, "New"), (ps, "Stateful")] \(p, lbl) -> describe lbl do
       it "simple" do
@@ -116,7 +123,7 @@ main = hspec do
         prs p "a   \n  a' \n  a''\nb  \nc   \n "
           `shouldParse` ["a", "a'", "a''", "b", "c"]
         prs' p "a   \n  a' \n  a''\nb  \nc   \n "
-          `succeedsLeaving` "\n "
+          `succeedsLeaving` ""
   -- describe "block > headedMany" do
   --   let nHeadedMany = LN.headedMany space space
   --       sHeadedMany = LS.headedMany space space

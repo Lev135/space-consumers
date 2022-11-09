@@ -1,5 +1,4 @@
 {-# LANGUAGE BlockArguments   #-}
-{-# LANGUAGE DeriveFunctor    #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 -- |
@@ -22,8 +21,11 @@
 -- - For line spaces we follow /Text.Megaparsec.Char.Lexer/: each lexeme should
 --   consume __all line spaces after it__ and this can be done by wrapping it in
 --   `lexeme` combinator.
--- - For end of line symbols we have a different convention: parser should
---   consume __only eols inside it's block__, but __not those, which follow it__.
+-- - For line endings rules are more complex: we distinguish here to kinds of
+--   parsers: consuming separate lines and consuming whole blocks. Block parsers
+--   should __never__ consume line endings, but line parsers should __always__
+--   consume __at least one eol__ character after it (or make sure, that there
+--   is end of input here).
 --
 -- Also note that you need to call 'space' manually to consume any white space
 -- before the first lexeme (i.e. at the beginning of the file).
@@ -35,42 +37,44 @@
 
 module Text.Megaparsec.Char.Lexer.New
   ( -- * Space consumer wrappers
-    Sc (..), C.Scn,
-    -- * White space
-    L.space,
-    lexeme,
-    symbol,
-    symbol',
+    Sc (..), Scn (..), Scn1 (..),
+    makeSc, makeScn, makeScn1, makeScs,
     L.skipLineComment,
     L.skipBlockComment,
     L.skipBlockCommentNested,
+    -- * White space
+    lexeme,
+    symbol,
+    symbol',
+    line,
+    mayLine,
 
     -- * Indentation
+    Guard,
     -- ** Primitives for indentation-sensitive parsing
     L.indentLevel,
     L.incorrectIndent,
-    L.indentGuard,
-    C.nonIndented,
-    -- ** Blocks of line
-    C.block,
-    C.blockWith,
+    indentGuard,
+    nonIndented,
+    -- ** Simple block
+    block,
     -- ** Headed blocks
     -- *** Simple combinators
-    C.headedOne,
-    C.headedOptional,
-    C.headedSome,
-    C.headedMany,
+    headedOne,
+    headedOptional,
+    headedSome,
+    headedMany,
     -- *** General combinators
-    C.headedBlock,
-    C.Body,
-    C.pureBody,
-    C.oneBody,
-    C.optionBody,
-    C.optionalBody,
-    C.someBody,
-    C.manyBody,
+    headedBlock,
+    Body,
+    pureBody,
+    oneBody,
+    optionBody,
+    optionalBody,
+    someBody,
+    manyBody,
     -- ** Line folds
-    C.replaceLineFoldError,
+    replaceLineFoldError,
     lineFold,
     paragraph,
     lineFoldWith,
@@ -91,14 +95,8 @@ module Text.Megaparsec.Char.Lexer.New
 import Data.CaseInsensitive (FoldCase)
 import Text.Megaparsec
 import qualified Text.Megaparsec.Char.Lexer as L
-import qualified Text.Megaparsec.Char.Lexer.New.Common as C
+import Text.Megaparsec.Char.Lexer.New.Common
 
-
--- | Newtype wrapper for line space consumer. In common cases you should use
--- standard combinators from /Text.Megaparsec.Char.Lexer.New/ rather than
--- unwrap it manually
-newtype Sc m
-  = Sc { unSc :: m () }
 
 -- | A @lexeme sc p@ behaves like @p@ and consumes spaces by @sc@ after it
 lexeme :: MonadParsec e s m =>
@@ -119,9 +117,9 @@ symbol' sc = L.symbol' $ unSc sc
 {-# INLINEABLE symbol' #-}
 
 lineFoldWith :: (TraversableStream s, MonadParsec e s m) =>
-  Ordering -> Pos -> Sc m -> C.Scn m -> (Sc m -> m a) -> m a
+  Ordering -> Pos -> Sc m -> Scn m -> (Sc m -> m a) -> m a
 lineFoldWith ord ref sc scn action =
-  C.lineFoldWith ord ref (unSc sc) scn (action . Sc)
+  lineFoldWithG ord ref (unSc sc) scn (action . Sc)
 {-# INLINEABLE lineFoldWith #-}
 
 lineFold ::
@@ -129,7 +127,7 @@ lineFold ::
   -- | Line space consumer
   Sc m ->
   -- | Line space and eols consumer
-  C.Scn m ->
+  Scn m ->
   -- | Callback that uses provided space-consumer
   (Sc m -> m a) ->
   m a
@@ -143,7 +141,7 @@ paragraph ::
   -- | Line space consumer
   Sc m ->
   -- | Line space and eols consumer
-  C.Scn m ->
+  Scn m ->
   -- | Callback that uses provided space-consumer
   (Sc m -> m a) ->
   m a
